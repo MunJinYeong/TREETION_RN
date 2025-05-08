@@ -1,17 +1,38 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, SafeAreaView, ActivityIndicator, Alert } from 'react-native';
+import { View, StyleSheet, SafeAreaView, ActivityIndicator, Alert, AppState } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { WebViewNavigation } from 'react-native-webview/lib/WebViewTypes';
 import { Audio } from 'expo-av';
 
 export default function WebViewApp() {
   // 상태 관리
-  const [isLoading, setIsLoading] = useState(true);  
-  const [canGoBack, setCanGoBack] = useState(false); 
+  const [isLoading, setIsLoading] = useState(true);  // 웹뷰 로딩 상태
+  const [canGoBack, setCanGoBack] = useState(false); // 뒤로가기 가능 여부
+  const [isRecording, setIsRecording] = useState(false); // 녹음 상태
 
   // Ref 관리
-  const webViewRef = useRef<WebView>(null);        
-  const recordingRef = useRef<Audio.Recording | null>(null); 
+  const webViewRef = useRef<WebView>(null);          // 웹뷰 참조
+  const recordingRef = useRef<Audio.Recording | null>(null); // 녹음 인스턴스 참조
+  const appState = useRef(AppState.currentState);    // 앱 상태 참조
+
+  // 앱 상태 변경 감지
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active' &&
+        isRecording
+      ) {
+        // 앱이 백그라운드에서 포그라운드로 돌아올 때 녹음 상태 확인
+        console.log('앱이 포그라운드로 돌아옴');
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isRecording]);
 
   // 앱 시작시 마이크 권한 요청
   useEffect(() => {
@@ -46,7 +67,9 @@ export default function WebViewApp() {
       await recording.prepareToRecordAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
+      
       await recording.startAsync();
+      setIsRecording(true);
       console.log('녹음 시작');
     } catch (error) {
       console.error('녹음 시작 실패:', error);
@@ -72,18 +95,19 @@ export default function WebViewApp() {
 
       // 녹음 인스턴스 초기화
       recordingRef.current = null;
+      setIsRecording(false);
     } catch (error) {
       console.error('녹음 종료 실패:', error);
       Alert.alert('오류', '녹음을 저장할 수 없습니다.');
     }
   };
 
-  //웹뷰 네비게이션 상태 변경 핸들러. 뒤로가기 가능 여부를 추적
+  //웹뷰 네비게이션 상태 변경 핸들러, 뒤로가기 가능 여부를 추적
   const handleNavigationStateChange = (navState: WebViewNavigation) => {
     setCanGoBack(navState.canGoBack);
   };
 
-  //웹뷰로부터 메시지 수신 핸들러
+  // 웹뷰로부터 메시지 수신 핸들러
   const onMessage = async (e: any) => {
     try {
       const { type } = JSON.parse(e.nativeEvent.data);
@@ -97,7 +121,6 @@ export default function WebViewApp() {
       console.error('메시지 처리 실패:', error);
     }
   };
-
 
   return (
     <SafeAreaView style={styles.container}>
